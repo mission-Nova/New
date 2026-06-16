@@ -4067,6 +4067,26 @@ html[data-theme="light"] .focus-lock-link{
 }
 </style>
 
+
+<style id="air1-mobile-performance-final-overrides">
+/* Final mobile/PWA performance pass: keep structure intact while reducing paint and timer overhead. */
+html,body{min-height:100svh;min-height:100dvh;overscroll-behavior-x:none;}
+.app{min-height:100svh;min-height:100dvh;}
+.side{height:100svh;height:100dvh;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
+.top,.card,.modal,.toast div{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
+.view,.view>.card,.view .grid>.card,.view .stat,.view .item{animation:none!important;}
+body:after,.premium-particles,.premium-command:before,.premium-pulse-dot,.mark.premium-logo{animation:none!important;}
+#cinematicParticles{display:none!important;}
+.btn{will-change:auto!important;}
+.pomo-lock.open{display:grid!important;contain:layout paint style;overflow:hidden;touch-action:manipulation;}
+#pomoLock .pomo-fs-stage{min-height:100svh!important;min-height:100dvh!important;max-height:100dvh!important;overflow:hidden!important;contain:layout paint style;}
+#pomoLock .pomo-flip-card.is-flipping .pomo-flip-flap{animation:none!important;}
+#pomoLock .pomo-flip-card{box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 10px 28px rgba(0,0,0,.38)!important;}
+#pomoLock .pomo-fs-progress span{transition:none!important;}
+.table-wrap,.dp-table-wrap{contain:content;}
+@media (max-width:900px){.app{display:block}.main{overflow-x:clip}.side{position:fixed!important;inset:0 auto 0 0;transform:translateX(-105%);transition:transform .18s ease;z-index:90}.side.open,.air1-fullscreen-side-open .side,.air1-menu-drawer-open .side{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce),(max-width:900px){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+</style>
 </head>
 <body>
 <script id="air1-perf-interval-shim">
@@ -4230,7 +4250,17 @@ function centralDateParts(d=new Date()){
 }
 function updateCentralClock(){
   let p=centralDateParts(),el=$('centralClock');
-  if(el)el.innerHTML=`<span class="cc-time">${p.time}</span><span class="cc-date">${esc(p.date)}</span><span class="cc-day">Local day: ${p.iso} • Study resets 00:00</span>`;
+  if(el){
+    let timeEl=el.querySelector('.cc-time'),dateEl=el.querySelector('.cc-date'),dayEl=el.querySelector('.cc-day');
+    if(!timeEl||!dateEl||!dayEl){
+      el.innerHTML=`<span class="cc-time"></span><span class="cc-date"></span><span class="cc-day"></span>`;
+      timeEl=el.querySelector('.cc-time');dateEl=el.querySelector('.cc-date');dayEl=el.querySelector('.cc-day');
+    }
+    if(timeEl&&timeEl.textContent!==p.time)timeEl.textContent=p.time;
+    if(dateEl&&dateEl.textContent!==p.date)dateEl.textContent=p.date;
+    const dayTxt=`Local day: ${p.iso} • Study resets 00:00`;
+    if(dayEl&&dayEl.textContent!==dayTxt)dayEl.textContent=dayTxt;
+  }
   if(p.iso!==appDateKey)handleCalendarDayRollover(p.iso);
 }
 function handleCalendarDayRollover(newKey=today()){
@@ -4245,12 +4275,7 @@ function handleCalendarDayRollover(newKey=today()){
 function startCentralClock(){
   updateCentralClock();
   clearInterval(window.__air1ClockTimer);
-  window.__air1ClockTimer=setInterval(()=>timerPulse(true),1000);
-  if(!window.__air1ClockRafStarted){
-    window.__air1ClockRafStarted=true;
-    const raf=()=>{ if(!document.hidden)timerPulse(false); requestAnimationFrame(raf); };
-    requestAnimationFrame(raf);
-  }
+  window.__air1ClockTimer=setInterval(()=>{ if(!document.hidden||hasActiveTimers())timerPulse(true); },1000);
   if(!window.__air1ClockEventsBound){
     window.__air1ClockEventsBound=true;
     ['visibilitychange','focus','pageshow','resume'].forEach(ev=>window.addEventListener(ev,()=>timerPulse(true),{passive:true}));
@@ -4275,7 +4300,7 @@ function releaseTimerWakeLock(){
 }
 function timerPulse(force=false){
   const now=Date.now();
-  if(!force && now-__air1PulseLast<450)return;
+  if(!force && now-__air1PulseLast<900)return;
   __air1PulseLast=now;
   try{updateCentralClock()}catch(e){}
   try{pomoTick()}catch(e){}
@@ -4284,8 +4309,7 @@ function timerPulse(force=false){
   try{timerBadge&&timerBadge()}catch(e){}
 }
 function startTimerHeartbeat(){
-  clearInterval(window.__air1TimerHeartbeat);
-  window.__air1TimerHeartbeat=setInterval(()=>timerPulse(true),1000);
+  // A single central heartbeat is created by startCentralClock(); avoid duplicate 1s intervals.
   timerPulse(true);
 }
 
@@ -4949,7 +4973,7 @@ function pomoStateFromUI(){let pick=pomoSelectedLink(),mode=pomoSelectedMode(),r
 function persistPomo(st){db.timerState=db.timerState||{};if(st)db.timerState.pomodoro=st;else delete db.timerState.pomodoro;save();timerBadge();hasActiveTimers()?requestTimerWakeLock():releaseTimerWakeLock()}
 function pomoClock(){let st=db.timerState?.pomodoro;if(st?.running){pomoEndAt=st.endAt;pomoSec=Math.max(0,Math.ceil((pomoEndAt-Date.now())/1000));}let d=$('pomoDisplay');if(d)d.textContent=fmtSec(pomoSec);updatePomoFullscreen(pomoSec,st);let sub=st?.sub||$('pomoSub')?.value||'FR',topic=st?.chapter||st?.topic||(st?.topicId&&db.topics[st.topicId]?.chapter)||db.topics[$('pomoTopic')?.value]?.chapter||'Selected chapter',mode=st?.mode||pomoMode||'Deep Study';let ps=$('pomoLockSub');if(ps)ps.textContent=`${sub} • ${topic} • ${st?.preset||pomoPreset} • ${mode==='Lecture'?'Lecture/background timer active':'Deep Study fullscreen/background timer active'}`;updatePomoSessionLink(st);let pp=$('pomoPauseBtn');if(pp)pp.textContent=pomoRun?'Ⅱ':'▶';timerBadge()}
 function pomoTick(){let st=db.timerState?.pomodoro;if(!st?.running)return;if(Date.now()>=st.endAt){pomoSec=0;pomoFinish(st);return}pomoSec=Math.max(0,Math.ceil((st.endAt-Date.now())/1000));pomoClock()}
-function startPomoInterval(){clearInterval(pomoTimer);pomoTimer=setInterval(()=>timerPulse(true),1000);timerPulse(true);requestTimerWakeLock()}
+function startPomoInterval(){clearInterval(pomoTimer);pomoTimer=null;timerPulse(true);requestTimerWakeLock()}
 function closePomoOverlay(exitNative=true){let lock=$('pomoLock');lock?.classList.remove('open');document.documentElement.classList.remove('pomo-fs-active');if(exitNative&&document.fullscreenElement){try{document.exitFullscreen?.()}catch(e){}}}
 async function enterPomoFullscreen(requireNative=false){let lock=$('pomoLock');if(!lock)return !requireNative;lock.classList.add('open');document.documentElement.classList.add('pomo-fs-active');pomoClock();requestTimerWakeLock();if(document.fullscreenEnabled&&lock.requestFullscreen&&!document.fullscreenElement){try{await lock.requestFullscreen({navigationUI:'hide'})}catch(e){/* Android/PWA can block native fullscreen. CSS fullscreen lock remains active. */}}return true}
 function pauseDeepSessionForFullscreen(){let st=db.timerState?.pomodoro;if(!(st?.running&&st.mode==='Deep Study'))return false;/* Timer no longer pauses only because Android/browser leaves native fullscreen. */enterPomoFullscreen(false);pomoClock();return false}
@@ -4991,7 +5015,7 @@ function simFinish(st=db.timerState?.sim){if(!st){simStop();return}let total=st.
 function simClock(){let st=db.timerState?.sim;if(st?.running){simEndAt=st.endAt;simSec=Math.max(0,Math.ceil((simEndAt-Date.now())/1000));}let h=Math.floor(simSec/3600),m=Math.floor((simSec%3600)/60),sx=simSec%60,txt=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sx).padStart(2,'0')}`;let el=$('simClock');if(el)el.textContent=txt;let f=$('simFlipDigits');if(f)f.innerHTML=simFlipClockHTML(simSec);let pp=$('simPauseBtn');if(pp)pp.textContent=simRun?'Ⅱ':'▶';let sub=$('simLockSub');if(sub)sub.textContent=`${txt} • Full-screen simulation timer runs in background`;timerBadge()}
 function persistSim(st){db.timerState=db.timerState||{};if(st)db.timerState.sim=st;else delete db.timerState.sim;save();timerBadge();hasActiveTimers()?requestTimerWakeLock():releaseTimerWakeLock()}
 function simTick(){let st=db.timerState?.sim;if(!st?.running)return;if(Date.now()>=st.endAt){simFinish(st);return}simSec=Math.max(0,Math.ceil((st.endAt-Date.now())/1000));simClock()}
-function startSimInterval(){clearInterval(simTimer);simTimer=setInterval(()=>timerPulse(true),1000);timerPulse(true);requestTimerWakeLock()}
+function startSimInterval(){clearInterval(simTimer);simTimer=null;timerPulse(true);requestTimerWakeLock()}
 function simToggle(){let st=db.timerState?.sim;if(st&&st.running){st.remaining=Math.max(0,Math.ceil((st.endAt-Date.now())/1000));st.running=false;simRun=false;clearInterval(simTimer);simTimer=null;simSec=st.remaining;persistSim(st);simClock();return}if(st&&!st.running&&st.remaining>0){st.running=true;st.endAt=Date.now()+st.remaining*1000}else{st={kind:'simulation',sessionId:`sim-${Date.now()}`,total:simSec||10800,remaining:0,startAt:Date.now(),endAt:Date.now()+(simSec||10800)*1000,running:true}}simRun=true;simEndAt=st.endAt;persistSim(st);simClock();let lock=$('simLock');lock?.classList.add('open');requestTimerWakeLock();lock?.requestFullscreen?.().catch(()=>{});startSimInterval()}
 function simStop(){let st=db.timerState?.sim,minsDone=simElapsedMinutes(st);if(st&&minsDone>=15&&confirm(`Stop simulation and log ${minsDone} minutes to Time Management / Daily Planner?`))return simFinish(st);simRun=false;clearInterval(simTimer);simTimer=null;persistSim(null);$('simLock')?.classList.remove('open');if(document.fullscreenElement)document.exitFullscreen?.();simClock();releaseTimerWakeLock()}
 function simReset(x=10800){simRun=false;simSec=x;simEndAt=0;clearInterval(simTimer);simTimer=null;persistSim(null);simClock();releaseTimerWakeLock()}
@@ -5016,7 +5040,7 @@ function syncMenuToggleState(){let mobile=window.matchMedia&&window.matchMedia('
 $('menuBtn').onclick=(ev)=>{ev?.stopPropagation?.();let mobile=window.matchMedia&&window.matchMedia('(max-width:900px)').matches;if(mobile){document.body.classList.remove('side-collapsed');$('side').classList.toggle('open')}else{$('side').classList.remove('open');document.body.classList.toggle('side-collapsed')}syncMenuToggleState()};
 window.addEventListener('resize',()=>{if(!(window.matchMedia&&window.matchMedia('(max-width:900px)').matches))$('side')?.classList.remove('open');syncMenuToggleState()});
 document.addEventListener('click',ev=>{let mobile=window.matchMedia&&window.matchMedia('(max-width:900px)').matches;if(mobile&&$('side')?.classList.contains('open')&&!ev.target.closest('#side')&&!ev.target.closest('#menuBtn')){$('side').classList.remove('open');syncMenuToggleState()}});
-syncMenuToggleState();$('settingsBtn').onclick=settings;$('closeSettings').onclick=()=>$('settingsModal').classList.remove('open');$('themeBtn').onclick=()=>{const cur=(db.settings.theme==='light'||document.documentElement.dataset.theme==='light')?'light':'dark';db.settings.theme=cur==='light'?'dark':'light';save();render()};$('focusBtn').onclick=()=>{$('focus').classList.add('open');focusClock()};$('focusClose').onclick=()=>$('focus').classList.remove('open');$('focusStart').onclick=focusToggle;$('focusReset').onclick=()=>{focusRun=false;focusEndAt=0;focusSec=1500;clearInterval(focusTimer);focusTimer=null;focusClock();releaseTimerWakeLock()};$('pomoStopBtn').onclick=pomoStop;$('pomoPauseBtn').onclick=pomoPauseToggle;let pe=$('pomoExitFullscreenBtn');if(pe)pe.onclick=pomoExitFullscreenOnly;$('simStopBtn').onclick=simStop;$('simPauseBtn').onclick=simToggle;document.addEventListener('fullscreenchange',pauseDeepIfFullscreenLost);document.addEventListener('visibilitychange',()=>{timerPulse(true);if(!document.hidden)requestTimerWakeLock()});window.addEventListener?.('focus',()=>timerPulse(true));window.addEventListener?.('pageshow',()=>timerPulse(true));setInterval(()=>timerPulse(true),5000);restoreRunningTimers();startCentralClock();startTimerHeartbeat();setInterval(dpMidnightCheck,30000);dpMidnightCheck();
+syncMenuToggleState();$('settingsBtn').onclick=settings;$('closeSettings').onclick=()=>$('settingsModal').classList.remove('open');$('themeBtn').onclick=()=>{const cur=(db.settings.theme==='light'||document.documentElement.dataset.theme==='light')?'light':'dark';db.settings.theme=cur==='light'?'dark':'light';save();render()};$('focusBtn').onclick=()=>{$('focus').classList.add('open');focusClock()};$('focusClose').onclick=()=>$('focus').classList.remove('open');$('focusStart').onclick=focusToggle;$('focusReset').onclick=()=>{focusRun=false;focusEndAt=0;focusSec=1500;clearInterval(focusTimer);focusTimer=null;focusClock();releaseTimerWakeLock()};$('pomoStopBtn').onclick=pomoStop;$('pomoPauseBtn').onclick=pomoPauseToggle;let pe=$('pomoExitFullscreenBtn');if(pe)pe.onclick=pomoExitFullscreenOnly;$('simStopBtn').onclick=simStop;$('simPauseBtn').onclick=simToggle;document.addEventListener('fullscreenchange',pauseDeepIfFullscreenLost);document.addEventListener('visibilitychange',()=>{timerPulse(true);if(!document.hidden)requestTimerWakeLock()});window.addEventListener?.('focus',()=>timerPulse(true));window.addEventListener?.('pageshow',()=>timerPulse(true));restoreRunningTimers();startCentralClock();startTimerHeartbeat();if(!window.__air1MidnightInterval)window.__air1MidnightInterval=setInterval(dpMidnightCheck,60000);dpMidnightCheck();
 
 (function(){
   const rawMetrics=metrics, rawPriority=(typeof priority==='function'?priority:(n=>all().slice(0,n||10))), rawBurnRate=(typeof burnRate==='function'?burnRate:(()=>({phase:'r4',days:1,left:0,rate:0})));
@@ -5082,7 +5106,7 @@ initRouteFromHash();render();
       }
       renderMobileNav();
       renderOrb();
-      setInterval(renderOrb,30000);
+      if(!window.__air1OrbInterval)window.__air1OrbInterval=setInterval(renderOrb,120000);
       installQuoteRotator();
       installNotifications();
       installBackupRecovery();
@@ -5808,7 +5832,7 @@ initRouteFromHash();render();
   function triggerSemanticBursts(){document.addEventListener('change',e=>{if(e.target.matches?.('input[type="checkbox"]:checked')){const r=e.target.getBoundingClientRect();burst(r.left+r.width/2,r.top+r.height/2,24)}});document.addEventListener('click',e=>{if(e.target.closest?.('[data-boss-start],[data-share-score],[data-act="pomoStart"],.preset.active,.air-readiness-orb')){burst(e.clientX,e.clientY,34)}})}
   function refreshAfterRender(){requestAnimationFrame(()=>{ensureNavIndicator();observeCounters();observeRings();$$('.view .card,.view .stat,.view .item').forEach((el,i)=>el.style.animationDelay=Math.min(i*60,420)+'ms')})}
   document.addEventListener('click',addRipple,true);document.addEventListener('click',()=>setTimeout(ensureNavIndicator,30),true);addEventListener('resize',ensureNavIndicator,{passive:true});window.addEventListener('air1:after-render',refreshAfterRender);window.addEventListener('air1:data-saved',()=>setTimeout(refreshAfterRender,40));
-  document.addEventListener('DOMContentLoaded',()=>{initParticleCanvas();initMagneticButtons();initPomoIdlePulse();triggerSemanticBursts();refreshAfterRender();setInterval(ensureNavIndicator,850)}, {once:true});
+  document.addEventListener('DOMContentLoaded',()=>{initParticleCanvas();initMagneticButtons();initPomoIdlePulse();triggerSemanticBursts();refreshAfterRender();setInterval(ensureNavIndicator,2500)}, {once:true});
 })();
 </script>
 
@@ -6129,7 +6153,7 @@ initRouteFromHash();render();
     window.addEventListener('air1:data-saved',()=>setTimeout(professionalEnhance,50));
   }
 
-  wait().then(c=>{core=c; installStorageGuard(); installEvents(); welcomeModal(); setTimeout(professionalEnhance,120); setInterval(()=>{applyStudentMode();updateLockMeta()},1500)});
+  wait().then(c=>{core=c; installStorageGuard(); installEvents(); welcomeModal(); setTimeout(professionalEnhance,120); setInterval(()=>{applyStudentMode();updateLockMeta()},5000)});
 })();
 </script>
 
@@ -6708,7 +6732,7 @@ initRouteFromHash();render();
     window.addEventListener('resize',()=>setTimeout(updateControls,120),{passive:true});
     window.addEventListener('orientationchange',()=>setTimeout(updateControls,260),{passive:true});
     window.addEventListener('air1:after-render',()=>{installControls();recordRoute(routeNow(),false);setTimeout(updateControls,80)});
-    setInterval(updateControls,1500);
+    setInterval(updateControls,4000);
   }
   function boot(){
     if(ready)return; core=window.AIR1_CORE; if(!core){setTimeout(boot,40);return;}
@@ -6809,7 +6833,7 @@ initRouteFromHash();render();
     },true);
     window.addEventListener('fullscreenchange',()=>setTimeout(()=>{document.body.classList.toggle('air1-native-fullscreen',!!document.fullscreenElement);ensureButton();if(!isFullscreenApp())setSide(false)},60),true);
     window.addEventListener('air1:after-render',()=>{ensureButton();setTimeout(()=>{if(sideOpen())document.body.classList.add('air1-fullscreen-side-open')},40)});
-    setInterval(()=>{ensureButton(); if(!isFullscreenApp()&&document.body.classList.contains('air1-fullscreen-side-open'))setSide(false);},1200);
+    setInterval(()=>{ensureButton(); if(!isFullscreenApp()&&document.body.classList.contains('air1-fullscreen-side-open'))setSide(false);},4000);
   }
   function boot(){if(!getCore()){setTimeout(boot,40);return;} bind(); ensureButton();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
@@ -6913,7 +6937,7 @@ initRouteFromHash();render();
     },true);
     window.addEventListener('resize',()=>{if(!isConstrained())setDrawer(false);},true);
     window.addEventListener('air1:after-render',()=>{ensureBackdrop();ensureTabsButton();syncButtons(drawerOpen());},true);
-    setInterval(()=>{ensureBackdrop();ensureTabsButton();if(drawerOpen()&&!isConstrained())setDrawer(false);},1500);
+    setInterval(()=>{ensureBackdrop();ensureTabsButton();if(drawerOpen()&&!isConstrained())setDrawer(false);},4000);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
 })();
@@ -6962,7 +6986,7 @@ initRouteFromHash();render();
   window.addEventListener('air1:after-render',enforceSoon,true);
   const mo=new MutationObserver(enforceSoon);
   if(document.body)mo.observe(document.body,{attributes:true,attributeFilter:['class','style']});
-  setInterval(()=>{if(drawerOpen())normalizeDrawer();else clampScrollX();},700);
+  setInterval(()=>{if(drawerOpen())normalizeDrawer();else clampScrollX();},3000);
   enforceSoon();
 })();
 </script>
@@ -7000,7 +7024,7 @@ initRouteFromHash();render();
   window.addEventListener('resize',()=>setTimeout(hardFix,80),{passive:true});
   window.addEventListener('orientationchange',()=>setTimeout(hardFix,240),{passive:true});
   new MutationObserver(()=>setTimeout(hardFix,0)).observe(document.body,{attributes:true,attributeFilter:['class']});
-  setInterval(hardFix,600);
+  setInterval(hardFix,3000);
   hardFix();
 })();
 </script>
@@ -7036,10 +7060,10 @@ initRouteFromHash();render();
   window.addEventListener('click',routeClickWatcher,true);
   document.addEventListener('pointerdown',routeClickWatcher,true);
   document.addEventListener('click',routeClickWatcher,true);
-  setInterval(()=>{const nav=$('#nav'); if(nav&&!nav.dataset.air1RouteCloseBound){nav.dataset.air1RouteCloseBound='1'; nav.addEventListener('pointerdown',routeClickWatcher,true); nav.addEventListener('click',routeClickWatcher,true);}},300);
+  const bindRouteClose=()=>{const nav=$('#nav'); if(nav&&!nav.dataset.air1RouteCloseBound){nav.dataset.air1RouteCloseBound='1'; nav.addEventListener('pointerdown',routeClickWatcher,true); nav.addEventListener('click',routeClickWatcher,true);}}; bindRouteClose(); window.addEventListener('air1:after-render',bindRouteClose,{passive:true});
   let lastHash=location.hash;
   window.addEventListener('hashchange',function(){lastHash=location.hash;[40,120,280,600].forEach(t=>setTimeout(close,t));},true);
-  setInterval(()=>{if(location.hash!==lastHash){lastHash=location.hash;close();}},250);
+  window.addEventListener('hashchange',()=>{lastHash=location.hash;close();},{passive:true});
   window.AIR1_CLOSE_MENU_DRAWER=close;
 })();
 </script>
